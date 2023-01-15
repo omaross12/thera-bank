@@ -1,0 +1,577 @@
+---
+title: "Thera Bank"
+author: "Omar Ossama"
+date: "6/8/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r include=FALSE}
+setwd ("C:/Users/omaro/Documents/DSBA/03-Machine Learning/05 - Project")
+```
+
+
+
+Libraries used
+```{r}
+library(readxl)
+library(esquisse)
+library(corrplot)
+library(ggplot2)
+library(gridExtra)
+library(DataExplorer)
+library(cluster)
+library(mice)
+library(NbClust)
+library(caTools)
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(randomForest)
+library(ROCR)
+library(ineq)
+library(InformationValue)
+library(caret)
+```
+
+
+
+
+
+```{r}
+thera_bank = read_excel("Thera Bank_Personal_Loan_Modelling-dataset-1.xlsx", sheet="Bank_Personal_Loan_Modelling")
+```
+
+
+
+Exploratory data analysis
+```{r}
+head(thera_bank)
+tail(thera_bank)
+dim(thera_bank)
+colnames(thera_bank)
+str(thera_bank)
+```
+
+
+
+Editing the data
+```{r}
+colnames(thera_bank) = make.names(colnames(thera_bank))
+sum(is.na(thera_bank))
+md.pattern(thera_bank)
+init.impute = mice(thera_bank, m=2, method = "pmm", seed = 1000)
+thera_bank = complete(init.impute, 2)
+
+##thera_bank$Family.members = [is.na(thera_bank$Family.members)] = 0
+
+thera_bank = thera_bank [,-1]
+
+thera_bank$Experience..in.years. = ifelse (thera_bank$Experience..in.years. < 0, -1*thera_bank$Experience..in.years., thera_bank$Experience..in.years.)
+
+thera_bank$Personal.Loan = as.factor(thera_bank$Personal.Loan)
+thera_bank$ZIP.Code = as.factor(thera_bank$ZIP.Code)
+thera_bank$Education = as.factor(thera_bank$Education)
+thera_bank$Securities.Account = as.factor(thera_bank$Securities.Account)
+thera_bank$CD.Account = as.factor(thera_bank$CD.Account)
+thera_bank$Online = as.factor(thera_bank$Online)
+thera_bank$CreditCard = as.factor(thera_bank$CreditCard)
+
+str(thera_bank)
+```
+
+
+
+```{r}
+summary(thera_bank)
+```
+
+
+Univariate analysis
+Checking the ratio of people who accepted the loan to those who did not
+```{r}
+thera_bank$Personal.Loan = as.numeric(thera_bank$Personal.Loan)
+prop.table(table(thera_bank$Personal.Loan))
+thera_bank$Personal.Loan = as.factor(thera_bank$Personal.Loan)
+```
+
+
+
+```{r}
+plot_histogram_n_boxplot = function(variable, variableNameString, binw){
+  h = ggplot(data = thera_bank, aes(x= variable))+
+    labs(x = variableNameString,y ='count')+
+    geom_histogram(fill = 'green',col = 'white',binwidth = binw)+
+    geom_vline(aes(xintercept=mean(variable)),
+            color="black", linetype="dashed", size=0.5)
+  b = ggplot(data = thera_bank, aes('',variable))+ 
+    geom_boxplot(outlier.colour = 'red',col = 'red',outlier.shape = 19)+
+    labs(x = '',y = variableNameString)+ coord_flip()
+  grid.arrange(h,b,ncol = 2)
+}
+```
+
+
+
+```{r}
+#Age in years
+plot_histogram_n_boxplot(thera_bank$Age..in.years., 'Age', 1)
+
+#Experience in years
+plot_histogram_n_boxplot(thera_bank$Experience..in.years., 'Experience', 1)
+
+#Income in K/month
+plot_histogram_n_boxplot(thera_bank$Income..in.K.month., 'Income', 1)
+
+#Family members
+plot_histogram_n_boxplot(thera_bank$Family.members, 'Family members', 1)
+
+#Credit Card Avg.
+plot_histogram_n_boxplot(thera_bank$CCAvg, 'Credit Card Avg', 1)
+
+#Mortgage
+ggplot(thera_bank) +
+ aes(x = Mortgage) +
+ geom_histogram(bins = 30L, fill = "#6dcd59") +
+ theme_minimal()
+
+ggplot(thera_bank) +
+ aes(x = "", y = Mortgage) +
+ geom_boxplot(fill = "#6dcd59") +
+ theme_minimal()
+
+#Zip Code
+ggplot(thera_bank) +
+ aes(x = ZIP.Code) +
+ geom_bar(fill = "#6dcd59") +
+ theme_minimal()
+
+#Personal loan
+ggplot(thera_bank) +
+ aes(x = Personal.Loan) +
+ geom_bar(fill = "#6dcd59") +
+ theme_minimal()
+
+#Education
+ggplot(thera_bank) +
+ aes(x = Education) +
+ geom_bar(fill = "#6dcd59") +
+ theme_minimal()
+
+#Securities
+ggplot(thera_bank) +
+ aes(x = Securities.Account) +
+ geom_bar(fill = "#6dcd59") +
+ theme_minimal()
+
+#Credit Card Account
+ggplot(thera_bank) +
+ aes(x = CD.Account) +
+ geom_bar(fill = "#6dcd59") +
+ theme_minimal()
+
+#Online use
+ggplot(thera_bank) +
+ aes(x = Online) +
+ geom_bar(fill = "#6dcd59") +
+ theme_minimal()
+
+#Credit card
+ggplot(thera_bank) +
+ aes(x = CreditCard) +
+ geom_bar(fill = "#6dcd59") +
+ theme_minimal()
+```
+
+
+
+Bivariate analysis to see to effect of the different independant variable on the dependant variable (Personal Loan)
+```{r}
+ggplot(thera_bank, aes(fill = Personal.Loan, x = Age..in.years.)) + 
+    geom_bar(position="fill")
+
+ggplot(thera_bank, aes(fill = Personal.Loan, x = Experience..in.years.)) + 
+    geom_bar(position="fill")
+
+ggplot(thera_bank, aes(fill = Personal.Loan, x = Income..in.K.month.)) + 
+    geom_bar(position="fill")
+
+chisq.test(thera_bank$Personal.Loan, thera_bank$ZIP.Code)
+ggplot(thera_bank, aes(fill = Personal.Loan, x = ZIP.Code)) + 
+    geom_bar(position="fill")
+
+ggplot(thera_bank, aes(fill = Personal.Loan, x = Family.members)) + 
+    geom_bar(position="fill")
+
+ggplot(thera_bank, aes(fill = Personal.Loan, x = CCAvg)) + 
+    geom_bar(position="fill")
+
+chisq.test(thera_bank$Personal.Loan, thera_bank$Education)
+ggplot(thera_bank, aes(fill = Personal.Loan, x = Education)) + 
+    geom_bar(position="fill")
+
+ggplot(thera_bank, aes(fill = Personal.Loan, x = Mortgage)) + 
+    geom_bar(position="fill")
+
+chisq.test(thera_bank$Personal.Loan, thera_bank$Securities.Account)
+ggplot(thera_bank, aes(fill = Personal.Loan, x = Securities.Account)) + 
+    geom_bar(position="fill")
+
+chisq.test(thera_bank$Personal.Loan, thera_bank$CD.Account)
+ggplot(thera_bank, aes(fill = Personal.Loan, x = CD.Account)) + 
+    geom_bar(position="fill")
+
+chisq.test(thera_bank$Personal.Loan, thera_bank$Online)
+ggplot(thera_bank, aes(fill = Personal.Loan, x = Online)) + 
+    geom_bar(position="fill")
+
+chisq.test(thera_bank$Personal.Loan, thera_bank$CreditCard)
+ggplot(thera_bank, aes(fill = Personal.Loan, x = CreditCard)) + 
+    geom_bar(position="fill")
+```
+
+
+
+```{r}
+corrplot(cor(thera_bank[c(1:3,5,6,8)]),type="lower",method="number")
+```
+
+
+```{r}
+chisq.test(thera_bank$CD.Account, thera_bank$ZIP.Code)
+ggplot(thera_bank, aes(fill = CD.Account, x = ZIP.Code)) + 
+    geom_bar(position="fill")
+
+chisq.test(thera_bank$CD.Account, thera_bank$Education)
+ggplot(thera_bank, aes(fill = CD.Account, x = Education)) + 
+    geom_bar(position="fill")
+
+chisq.test(thera_bank$CD.Account, thera_bank$Securities.Account)
+ggplot(thera_bank, aes(fill = CD.Account, x = Securities.Account)) + 
+    geom_bar(position="fill")
+
+chisq.test(thera_bank$CD.Account, thera_bank$Online)
+ggplot(thera_bank, aes(fill = CD.Account, x = Online)) + 
+    geom_bar(position="fill")
+
+chisq.test(thera_bank$CD.Account, thera_bank$CreditCard)
+ggplot(thera_bank, aes(fill = CD.Account, x = CreditCard)) + 
+    geom_bar(position="fill")
+```
+
+
+
+
+Adjusting variable types
+```{r}
+thera_bank$ZIP.Code = as.numeric(thera_bank$ZIP.Code)
+thera_bank$Education = as.numeric(thera_bank$Education)
+thera_bank$Personal.Loan = as.numeric(thera_bank$Personal.Loan)
+thera_bank$Securities.Account = as.numeric(thera_bank$Securities.Account)
+thera_bank$CD.Account = as.numeric(thera_bank$CD.Account)
+thera_bank$Online = as.numeric(thera_bank$Online)
+thera_bank$CreditCard = as.numeric(thera_bank$CreditCard)
+str(thera_bank)
+```
+
+
+
+Clustering using K means method
+```{r}
+seed = 1000
+set.seed(seed)
+
+thera_bank_scaled = scale(thera_bank)
+
+totWss = rep (0,5)
+for (k in 1:5){
+  set.seed(seed)
+  clust = kmeans(x=thera_bank_scaled, centers=k, nstart=5)
+  totWss[k] = clust$tot.withinss
+}
+print(totWss)
+plot(c(1:5),totWss,type="b")
+
+nc = NbClust(thera_bank_scaled, min.nc=2, max.nc = 5, method = "kmeans")
+
+
+```
+We can see that the optimum number of clusters is = 3
+
+Creating 3 clusters
+```{r}
+clust = kmeans(x=thera_bank_scaled, centers=3, nstart=5)
+clusplot(thera_bank_scaled,clust$cluster,color=TRUE,shade=TRUE)
+
+thera_bank_clust = thera_bank
+thera_bank_clust$Cluster = clust$cluster
+print(thera_bank_clust)
+
+cust_profile = aggregate(thera_bank_scaled, list(thera_bank_clust$Cluster), FUN="mean")
+print(cust_profile)
+```
+
+
+Building CART and random forest models
+Splitting the data
+```{r}
+summary(thera_bank)
+thera_bank$Personal.Loan = as.factor(thera_bank$Personal.Loan)
+
+set.seed(seed)
+
+sample = sample.split(thera_bank$Personal.Loan,SplitRatio = 0.7)
+train = subset(thera_bank,sample == TRUE)
+test = subset(thera_bank,sample == FALSE)
+
+nrow(train)
+nrow(test)
+
+prop.table(table(thera_bank$Personal.Loan))
+prop.table(table(train$Personal.Loan))
+prop.table(table(test$Personal.Loan))
+
+```
+
+
+
+CART model
+```{r}
+r.ctrl = rpart.control(minsplit = 10, minbucket = 3, xval = 10)
+
+thera_cart_model <- rpart(formula = Personal.Loan~., data = train, method = "class", control = r.ctrl)
+thera_cart_model
+fancyRpartPlot(thera_cart_model)
+prp(thera_cart_model)
+```
+
+
+Variable importance
+```{r}
+thera_cart_model$variable.importance
+```
+
+
+```{r}
+thera_cart_model$cptable
+```
+No pruning required
+
+
+
+Model validation using the train data
+```{r}
+train_class = predict(thera_cart_model, train, type="class")
+train_score = predict(thera_cart_model, train)
+
+
+caret::confusionMatrix(train$Personal.Loan, train_class)
+```
+Accuracy = 98.57%
+
+Model evaluation using test data
+```{r}
+test_class = predict(thera_cart_model, test, type="class")
+test_score = predict(thera_cart_model, test)
+
+caret::confusionMatrix(test$Personal.Loan, test_class)
+```
+Accuracy = 97.87%
+Difference between train and test accuracy = 0.7%
+So we can say that the model is valid
+
+
+
+
+```{r}
+set.seed(seed)
+
+thera_rf = tuneRF(x = train[, -9],
+                  y = train$Personal.Loan,
+                  mtrystart = 3,
+                  stepfactor=1.5,
+                  ntree=70,
+                  improve=0.0001,
+                  nodesize=10,
+                  trace=TRUE,
+                  plot=TRUE,
+                  doBest=TRUE,
+                  importance=TRUE 
+                  )
+
+print(thera_rf)
+
+plot(thera_rf)
+
+print(thera_rf$importance)
+```
+Optimum mtry value = 6
+OOB = 1.26%
+
+
+Model validation
+```{r}
+train_class_rf = predict(thera_rf, train, type="class")
+train_score_rf = predict(thera_rf, train)
+
+caret::confusionMatrix(train$Personal.Loan, train_class_rf)
+```
+Accuracy = 99.34%
+
+
+
+```{r}
+test_class_rf = predict(thera_rf, test, type="class")
+test_score_rf = predict(thera_rf, test)
+
+caret::confusionMatrix(test$Personal.Loan, test_class_rf)
+```
+Accuracy = 98.13%
+
+
+Model performance measures
+```{r}
+train_cart = train
+test_cart = test
+
+train_rf = train
+test_rf = test
+
+
+train_cart$prediction = predict(thera_cart_model, train_cart, type="class")
+train_cart$prob1 = predict(thera_cart_model, train_cart, type="prob")[,"1"]
+summary(train_cart)
+
+test_cart$prediction = predict(thera_cart_model, test_cart, type="class")
+test_cart$prob1 = predict(thera_cart_model, test_cart, type="prob")[,"1"]
+head(test_cart)
+
+train_rf$prediction = predict(thera_rf, train_rf, type="class")
+train_rf$prob1 = predict(thera_rf, train_rf, type="prob")[,"1"]
+head(train_rf)
+
+test_rf$prediction = predict(thera_rf, test_rf, type="class")
+test_rf$prob1 = predict(thera_rf, test_rf, type="prob")[,"1"]
+head(test_rf)
+
+summary(test_rf)
+```
+
+
+
+
+Performance metrics for CART train
+```{r}
+
+pred_train_cart = prediction(train_cart$prob1, train_cart$Personal.Loan)
+perf_train_cart = performance(pred_train_cart, "tpr", "fpr")
+
+plot(perf_train_cart)
+
+KS_train_cart = max(perf_train_cart@y.values[[1]]-perf_train_cart@x.values[[1]])
+print(KS_train_cart)
+
+auc_train_cart = performance(pred_train_cart,"auc"); 
+auc_train_cart = as.numeric(auc_train_cart@y.values)
+print(auc_train_cart)
+
+gini_train_cart = ineq(train_cart$prob1, type="Gini")
+print(gini_train_cart)
+```
+KS value = 0.9126
+AUC = 0.9815
+Gini = 0.8705
+
+
+
+Performance metrics for CART test
+```{r}
+
+pred_test_cart = prediction(test_cart$prob1, test_cart$Personal.Loan)
+perf_test_cart = performance(pred_test_cart, "tpr", "fpr")
+
+plot(perf_test_cart)
+
+KS_test_cart = max(perf_test_cart@y.values[[1]]-perf_test_cart@x.values[[1]])
+print(KS_test_cart)
+
+auc_test_cart = performance(pred_test_cart,"auc"); 
+auc_test_cart = as.numeric(auc_test_cart@y.values)
+print(auc_test_cart)
+
+gini_test_cart = ineq(test_cart$prob1, type="Gini")
+print(gini_test_cart)
+```
+KS value = 0.9243
+AUC = 0.9826
+Gini = 0.8739
+
+
+
+Performance metrics for random forest train
+```{r}
+
+pred_train_rf = prediction(train_rf$prob1, train_rf$Personal.Loan)
+perf_train_rf = performance(pred_train_rf, "tpr", "fpr")
+
+plot(perf_train_rf)
+
+KS_train_rf = max(perf_train_rf@y.values[[1]]-perf_train_rf@x.values[[1]])
+print(KS_train_rf)
+
+auc_train_rf = performance(pred_train_rf,"auc"); 
+auc_train_rf = as.numeric(auc_train_rf@y.values)
+print(auc_train_rf)
+
+gini_train_rf = ineq(train_rf$prob1, type="Gini")
+print(gini_train_rf)
+```
+KS = 0.9943
+AUC = 0.9999
+Gini = 0.8987
+
+
+
+Performance metrics for random forest test
+```{r}
+
+pred_test_rf = prediction(test_rf$prob1, test_rf$Personal.Loan)
+perf_test_rf = performance(pred_test_rf, "tpr", "fpr")
+
+plot(perf_test_rf)
+
+KS_test_rf = max(perf_test_rf@y.values[[1]]-perf_test_rf@x.values[[1]])
+print(KS_test_rf)
+
+auc_test_rf = performance(pred_test_rf,"auc"); 
+auc_test_rf = as.numeric(auc_test_rf@y.values)
+print(auc_test_rf)
+
+gini_test_rf = ineq(test_rf$prob1, type="Gini")
+print(gini_test_rf)
+```
+KS = 0.9662
+AUC = 0.9979
+Gini = 0.8991
+
+
+
+
+
+Concordance and discordcance ratios:
+```{r}
+conc_train_cart = Concordance(actuals=train_cart$Personal.Loan, predictedScores=train_cart$prob1)
+print(conc_train_cart)
+
+conc_test_cart = Concordance(actuals=test_cart$Personal.Loan, predictedScores=test_cart$prob1)
+print(conc_test_cart)
+
+conc_train_rf = Concordance(actuals=train_rf$Personal.Loan, predictedScores=train_rf$prob1)
+print(conc_train_rf)
+
+conc_test_rf = Concordance(actuals=test_rf$Personal.Loan, predictedScores=test_rf$prob1)
+print(conc_test_rf)
+
+```
+
